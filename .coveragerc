@@ -1,0 +1,16 @@
+[run]
+branch = True
+source = 
+    cli
+    pipeline-orchestration
+omit =
+    tests/*
+    */__init__.py
+    pipeline-orchestration/logs/*
+    pipeline-orchestration/config/*
+
+[report]
+fail_under = 80
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:

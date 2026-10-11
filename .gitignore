@@ -2,3 +2,6 @@
 Design Choices.docx
 .env
 logs/
+__pycache__/
+.coverage
+coverage.*
