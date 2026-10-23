@@ -3,6 +3,7 @@ branch = True
 source = 
     cli
     pipeline-orchestration
+    common
 omit =
     tests/*
     */__init__.py
