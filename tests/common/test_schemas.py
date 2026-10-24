@@ -1,10 +1,12 @@
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from common.schemas import (
+    Digest,
     GithubSource,
     LocalSource,
     RegistryImage,
+    RunId,
     ScanRequest,
     TarballImage,
     parse_github_url,
@@ -28,10 +30,28 @@ class TestRegistryImage:
     def test_valid(self, ref):
         assert RegistryImage(ref=ref).ref == ref
 
-    @pytest.mark.parametrize("ref", ["", "-flag", "--config=evil", "a b", "a;b", "a$(x)", "a\nb", "x" * 300])
+    @pytest.mark.parametrize("ref", [
+        "", "-flag", "--config=evil", "a b", "a;b", "a$(x)", "a\nb", "x" * 300,
+        "user:pass@registry.io/img",                  # credentials in the reference
+        "registry.io/img@sha256:abc",                 # '@' only allowed with a full sha256 digest
+        "img@sha256:" + "a" * 64 + "@x",
+    ])
     def test_invalid(self, ref):
         with pytest.raises(ValidationError):
             RegistryImage(ref=ref)
+
+
+class TestConstrainedTypes:
+    @pytest.mark.parametrize("tp,good,bad", [
+        (RunId, "run_2026-10-24", ["short", "has space 123", "../../x", "x" * 65]),
+        (Digest, "sha256:" + "a" * 64, ["sha256:abc", "sha1:" + "a" * 40, "sha256:" + "A" * 64, "latest"]),
+    ])
+    def test_runid_and_digest(self, tp, good, bad):
+        adapter = TypeAdapter(tp)
+        assert adapter.validate_python(good) == good
+        for value in bad:
+            with pytest.raises(ValidationError):
+                adapter.validate_python(value)
 
 
 class TestTarballImage:

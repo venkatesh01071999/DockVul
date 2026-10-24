@@ -16,7 +16,7 @@ import re
 from pathlib import PurePosixPath
 from typing import Annotated, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 GITHUB_RE = re.compile(
     r"^(?:https://github\.com/|git@github\.com:)"
@@ -30,6 +30,11 @@ COMMIT_RE = re.compile(r"^[0-9a-f]{7,40}$")
 RELPATH_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_. \-/]*$")
 SERVICE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$")
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+DIGEST_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
+
+# Constrained string types: the pattern ends up in the MCP tool's JSON schema and is enforced on every call.
+RunId = Annotated[str, StringConstraints(pattern=RUN_ID_RE.pattern)]
+Digest = Annotated[str, StringConstraints(pattern=DIGEST_RE.pattern)]
 
 
 class Strict(BaseModel):
@@ -47,6 +52,10 @@ class RegistryImage(Strict):
     def _ref(cls, v: str) -> str:
         if not REGISTRY_REF_RE.match(v):
             raise ValueError("invalid registry image reference")
+        # '@' is only allowed for a digest suffix; otherwise "user:pass@host/img" would smuggle credentials
+        _, at, digest = v.partition("@")
+        if at and not DIGEST_RE.match(digest):
+            raise ValueError("only an @sha256:<digest> suffix is allowed after '@'")
         return v
 
 
@@ -125,6 +134,11 @@ def validate_run_id(v: str) -> str:
 class ScanRequest(Strict):
     """Everything the user can supply on the command line, validated and normalized."""
 
+    # In normal class using only variable:type ignores the variables and it doesn't create class variables. Accessing them raises error. So we need to assign default values to make them class variables.
+
+    # But below is something different. We have inherited pydantic's BaseModel class. So the variables we define here are not class variables but instance variables.
+    # Standard Pydantic field (becomes an object/instance variable)
+    # Also assigning default values doesnt make them class variables, since pydantic does the magic underneath
     image: Image
     source: Optional[Source] = None
     dockerfile: Optional[str] = None
@@ -132,6 +146,9 @@ class ScanRequest(Strict):
     compose_service: Optional[str] = None
     source_subdir: Optional[str] = None
 
+    # to explicitly set a class variable
+    # sample: ClassVar[str] = "class variable"
+    
     # runs before pydantic's own validation (class variable), so we can treat empty strings as None
     @field_validator("dockerfile", "compose_file", "compose_service", "source_subdir", mode="before")
     @classmethod
