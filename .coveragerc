@@ -4,6 +4,8 @@ source =
     cli
     pipeline-orchestration
     common
+    gateway
+
 omit =
     tests/*
     */__init__.py

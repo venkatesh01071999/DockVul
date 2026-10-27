@@ -23,10 +23,12 @@ class ApprovalError(Exception):
 
 
 def _b64(raw: bytes) -> str:
+    # strip the final = from base 64 encoding
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
 def _unb64(text: str) -> bytes:
+    # add back the final = to properly decode
     return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
@@ -38,6 +40,7 @@ def issue_approval(secret: bytes, *, tool: str, image_digest: str, ttl_seconds: 
                    now: Optional[float] = None) -> str:
     """Called by the orchestrator after a person approved running `tool` on `image_digest`."""
     now = time.time() if now is None else now
+    # n - random nonce
     payload = json.dumps(
         {"t": tool, "d": image_digest, "exp": int(now) + ttl_seconds, "n": secrets.token_hex(8)},
         separators=(",", ":"),

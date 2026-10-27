@@ -17,6 +17,9 @@ class AuthMiddleware:
         if scope["type"] == "http" and scope["path"] not in self._exempt:
             given = dict(scope["headers"]).get(b"authorization", b"")
             if not hmac.compare_digest(given, self._expected):
+                # 2 send calls because of how ASGI expects
+                # status and header is required upfront so sent first
+                # then body is sent
                 body = json.dumps({"error": "unauthorized"}).encode()
                 await send({"type": "http.response.start", "status": 401, "headers": [
                     (b"content-type", b"application/json"),
