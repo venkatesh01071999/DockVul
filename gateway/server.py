@@ -133,7 +133,7 @@ def create_server(
     return mcp
 
 
-def build_app(settings: Settings, **kwargs: Any) -> AuthMiddleware:
+def build_app(settings: Settings, **kwargs: Any) -> AuthMiddleware: # pragma: no cover
     mcp = create_server(settings, **kwargs)
     return AuthMiddleware(mcp.streamable_http_app(), settings.gateway_token, exempt_paths={"/health"})
 

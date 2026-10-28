@@ -49,13 +49,16 @@ def test_invalid_arguments_are_rejected_before_reaching_a_worker(call_tool, work
     assert result.isError
     assert worker_stub.requests == []
 
+def test_analyze_config_accepts_and_forwards(call_tool, worker_stub):
+    worker_stub.responses["/analyze"] = (200, {"result": ""})
+    request = {"image": {"kind": "tarball", "name": "img.tar"}, "source": {"kind": "local"}}
+    assert not call_tool("analyze_config", {**RUN, "request": request}).isError
 
 def test_analyze_config_rejects_a_path_that_escapes_the_source(call_tool, worker_stub):
     request = {"image": {"kind": "registry", "ref": "nginx"}, "source": {"kind": "local"},
                "dockerfile": "../../etc/passwd"}
     assert call_tool("analyze_config", {**RUN, "request": request}).isError
     assert worker_stub.requests == []
-
 
 def test_sandbox_tool_without_a_valid_approval_is_denied(call_tool, worker_stub, audit_lines):
     result = call_tool("slim_seccomp_profile", {**RUN, "image_digest": DIGEST, "approval_token": "x" * 40})
@@ -64,8 +67,14 @@ def test_sandbox_tool_without_a_valid_approval_is_denied(call_tool, worker_stub,
     assert worker_stub.requests == []
     assert json.loads(audit_lines[-1])["status"] == "denied"
 
+def test_sandbox_dockerbench_with_a_valid_approval_runs_once(call_tool, worker_stub, settings):
+    worker_stub.responses["/section4"] = (200, {})
+    approval = issue_approval(settings.approval_secret, tool="bench", image_digest=DIGEST)
+    args = {**RUN, "image_digest": DIGEST, "approval_token": approval}
+    bench = call_tool("docker_bench_section4", args)
+    assert not bench.isError and body(bench)["result"] == {}
 
-def test_sandbox_tool_with_a_valid_approval_runs_once(call_tool, worker_stub, settings):
+def test_sandbox_slim_with_a_valid_approval_runs_once(call_tool, worker_stub, settings):
     worker_stub.responses["/profile"] = (200, {"syscalls": ["read"]})
     approval = issue_approval(settings.approval_secret, tool="slim", image_digest=DIGEST)
     args = {**RUN, "image_digest": DIGEST, "approval_token": approval}
@@ -77,7 +86,6 @@ def test_sandbox_tool_with_a_valid_approval_runs_once(call_tool, worker_stub, se
     # the same token cannot be replayed
     assert call_tool("slim_seccomp_profile", args).isError
     assert len(worker_stub.requests) == 1
-
 
 def test_worker_failure_is_reported_without_internal_details(call_tool, worker_stub, audit_lines):
     worker_stub.responses["/scan"] = (500, {"trace": "internal stack trace"})

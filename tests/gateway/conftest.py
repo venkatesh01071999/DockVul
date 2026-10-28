@@ -6,6 +6,7 @@ import dataclasses
 
 import pytest
 
+from gateway.auth import AuthMiddleware
 from gateway.audit import AuditLog
 from gateway.approval import ApprovalVerifier
 from gateway.config import Settings
@@ -99,6 +100,21 @@ def call_tool(settings, pool, audit, verifier):
 
     _call.server = server
     return _call
+
+@pytest.fixture
+def inner_calls():
+    return []
+
+
+@pytest.fixture
+def app(inner_calls):
+    async def inner(scope, receive, send):
+        inner_calls.append(scope["type"])
+        if scope["type"] == "http":
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"ok"})
+
+    return AuthMiddleware(inner, "t" * 16, exempt_paths={"/health"})
 
 
 @pytest.fixture

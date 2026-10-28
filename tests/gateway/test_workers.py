@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import pytest
 
@@ -61,3 +62,24 @@ def test_second_call_is_refused_as_busy_when_the_tool_limit_is_reached(make_pool
     results = asyncio.run(two_calls())
     assert sorted(type(r).__name__ for r in results) == ["WorkerError", "dict"]
     assert any(isinstance(r, WorkerError) and "busy" in str(r) for r in results)
+
+def test_call_becomes_timeout(make_pool, settings, override):
+    settings = override(timeouts={"trivy": 0.1})
+    async def slow(request):
+        await asyncio.sleep(0.2)
+        return httpx.Response(200, json={})
+
+    pool = make_pool(settings, handler=slow)
+
+    with pytest.raises(WorkerError, match="timed out"):
+        call(pool)
+
+def test_call_with_invalid_response_is_rejected(pool, worker_stub):
+    worker_stub.responses["/scan"] = (200, "not json")
+    with pytest.raises(WorkerError, match="unexpected response"):
+        call(pool)
+
+def test_call_with_invalid_json_is_rejected(tmp_path, pool, worker_stub):
+    worker_stub.responses["/scan"] = (200, None) # invalid JSON
+    with pytest.raises(WorkerError, match="invalid JSON"):
+        call(pool)

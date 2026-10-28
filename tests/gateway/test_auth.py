@@ -4,23 +4,6 @@ from gateway.auth import AuthMiddleware
 
 TOKEN = "t" * 16
 
-
-@pytest.fixture
-def inner_calls():
-    return []
-
-
-@pytest.fixture
-def app(inner_calls):
-    async def inner(scope, receive, send):
-        inner_calls.append(scope["type"])
-        if scope["type"] == "http":
-            await send({"type": "http.response.start", "status": 200, "headers": []})
-            await send({"type": "http.response.body", "body": b"ok"})
-
-    return AuthMiddleware(inner, TOKEN, exempt_paths={"/health"})
-
-
 def status(sent):
     return sent[0]["status"]
 

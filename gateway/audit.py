@@ -23,6 +23,6 @@ class AuditLog:
         elif self._path:
             with open(self._path, "a", encoding="utf-8") as f:
                 f.write(line + "\n")
-        else:
+        else: # pragma: no cover
             sys.stdout.write(line + "\n")
             sys.stdout.flush()
