@@ -1,4 +1,7 @@
 import argparse
+import asyncio
+import os
+import sys
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -11,6 +14,11 @@ from common.schemas import (
     TarballImage,
     parse_github_url,
 )
+
+from orchestrator.config import ConfigError, Settings
+from orchestrator.gateway_client import GatewayClient
+from orchestrator.graph import run_scan
+from orchestrator.report import exit_code, write_report
 
 TARBALL_SUFFIXES = (".tar", ".tar.gz", ".tgz")
 GITHUB_PREFIXES = ("https://github.com/", "git@github.com:")
@@ -134,6 +142,33 @@ def parse_request() -> ScanRequest:
     return to_scan_request(args, parser)
 
 
-if __name__ == "__main__":
-    # pragma: no cover
-    request = parse_request()  # next: hand the request to the LangGraph orchestrator
+async def ask_human(info: dict) -> bool:
+    """
+    Ask a person whether the sandbox checks may run. Anything but an explicit "y" is a no, 
+    so the privileged sandbox never starts unattended.
+    """
+    if not sys.stdin.isatty():
+        return False
+    print("\nSandbox checks need your approval.")
+    print(f"  image digest : {info['image_digest']}")
+    print(f"  WARNING      : {info['warning']}")
+    answer = await asyncio.to_thread(input, "Run the sandbox checks? [y/N] ")
+    return answer.strip().lower() == "y"
+
+
+async def scan(request: ScanRequest) -> int:  # pragma: no cover
+    """Run the LangGraph orchestration for the request, write the report and return the exit code."""
+
+    try:
+        settings = Settings.from_env()
+    except ConfigError as e:
+        sys.exit(f"configuration error: {e}")
+    gateway = GatewayClient(settings.gateway_url, settings.gateway_token, settings.call_timeout)
+    report = await run_scan(request, gateway, settings, approve=ask_human)
+    path = write_report(report, Path(os.environ.get("DOCKVUL_OUTPUT_DIR", "output")))
+    print(f"report written to {path} ({report['status']}, {len(report['findings'])} findings)")
+    return exit_code(report)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    sys.exit(asyncio.run(scan(parse_request())))

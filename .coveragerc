@@ -5,6 +5,7 @@ source =
     pipeline-orchestration
     common
     gateway
+    orchestrator
 
 omit =
     tests/*

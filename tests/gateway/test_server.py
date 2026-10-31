@@ -30,6 +30,9 @@ def test_trivy_scan_forwards_to_the_worker_and_masks_the_answer(call_tool, worke
     result = call_tool("trivy_scan", {**RUN, "image": {"kind": "registry", "ref": "nginx:latest"}})
 
     assert not result.isError
+    # structured output is the envelope itself, not wrapped in {"result": ...}
+    assert result.structuredContent["tool"] == "trivy"
+    assert result.structuredContent["result"] == {"image_config": {"Env": ["DB_PASSWORD=<REDACTED:env_secret>"]}}
     out = body(result)
     assert out["redactions"] == 1
     assert out["result"] == {"image_config": {"Env": ["DB_PASSWORD=<REDACTED:env_secret>"]}}

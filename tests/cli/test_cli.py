@@ -1,17 +1,35 @@
 import pytest
+import asyncio
+import io
 
+import orchestrator.graph as graph
+from cli.cli import ask_human, scan
 from common.schemas import (
     GithubSource, LocalSource, RegistryImage, ScanRequest, TarballImage,
 )
 
 GH_HTTPS = "https://github.com/owner/repo"
 GH_SSH = "git@github.com:owner/repo.git"
+INFO = {"image_digest": "sha256:" + "a" * 64, "entrypoint": ["gunicorn"], "warning": "privileged"}
+REQUEST = {"image": {"kind": "registry", "ref": "nginx"}}
 
+def finding(severity="HIGH", usage="used"):
+    return {"severity": severity, "usage": usage}
 
 def assert_usage_error(excinfo, capsys, message):
     assert excinfo.value.code == 2
     assert message in capsys.readouterr().err
 
+def ask(monkeypatch, *, tty, answer=""):
+    stdin = io.StringIO()
+    stdin.isatty = lambda: tty
+    monkeypatch.setattr("sys.stdin", stdin)
+    monkeypatch.setattr("builtins.input", lambda prompt="": answer)
+    return asyncio.run(ask_human(INFO))
+
+async def mock_run(request, gateway, settings, approve):
+    return {"run_id": "r", "request": REQUEST, "approved": True, "findings": [finding()], "status": "complete",
+                           "trivy": {"image": {"digest": "sha256:x"}}, "analysis": {"exposure": "public"}}
 
 class TestBuildParser:
     # parser from conftest.py fixture
@@ -263,3 +281,28 @@ class TestToScanRequest:
         with pytest.raises(SystemExit) as e:
             convert("--image", str(tmp_path / "-img.tar"))
         assert_usage_error(e, capsys, "invalid input: name: tarball must be a file name")
+
+
+class TestAskHuman:
+    def test_non_interactive_run_never_approves(self, monkeypatch):
+        assert ask(monkeypatch, tty=False, answer="y") is False
+
+    @pytest.mark.parametrize("answer,expected", [("y", True), (" Y ", True), ("yes", False), ("n", False), ("", False)])
+    def test_only_an_explicit_y_approves(self, monkeypatch, answer, expected):
+        assert ask(monkeypatch, tty=True, answer=answer) is expected
+
+class TestTopScanRequest:
+    def test_round_trips_error(self, tmp_path, monkeypatch, convert):
+            req = convert("--image", "x", "--source", GH_HTTPS, "--commit", "abc1234", "--compose-file", "dc.yml")
+            monkeypatch.setenv("GATEWAY_TOKEN", "g" * 2)
+            monkeypatch.setenv("APPROVAL_SECRET", "w" * 2)
+            with pytest.raises(SystemExit) as e:
+                asyncio.run(scan(request=req))
+
+    def test_round_trips_through_json(self, tmp_path, monkeypatch, convert):
+        req = convert("--image", "x", "--source", GH_HTTPS, "--commit", "abc1234", "--compose-file", "dc.yml")
+        monkeypatch.setenv("GATEWAY_TOKEN", "g" * 16)
+        monkeypatch.setenv("APPROVAL_SECRET", "w" * 16)
+        monkeypatch.setenv("DOCKVUL_OUTPUT_DIR", str(tmp_path))
+        monkeypatch.setattr("cli.cli.run_scan", mock_run)
+        assert asyncio.run(scan(request=req)) == 1
